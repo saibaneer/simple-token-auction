@@ -4,7 +4,7 @@ import {
     time,
     loadFixture,
   } from "@nomicfoundation/hardhat-toolbox/network-helpers";
-import { MyToken, TokenAuction, TokenAuction2, TokenAuctionWithArray } from "../typechain-types";
+import { MyToken, TokenAuctionWithArray } from "../typechain-types";
 // import { BigNumber } from "ethers";
 
 describe("TokenAuction Using Array", function () {
@@ -39,17 +39,16 @@ describe("TokenAuction Using Array", function () {
     const auctionStartTime = await time.latest() + 60; // starts in 1 min
     const auctionEndTime = auctionStartTime + auctionDuration;
 
-    auction = await TokenAuction.deploy(
-      await token.getAddress(),
-      initialSupply,
-      auctionStartTime,
-      auctionEndTime,
-      tokenPrice
-    );
+    auction = await TokenAuction.deploy();
     await auction.waitForDeployment();
 
     // Owner approves tokens to be spent by the auction contract
     await token.approve(await auction.getAddress(), initialSupply);
+    await auction.startAuction(await token.getAddress(),
+    initialSupply,
+    auctionStartTime,
+    auctionEndTime,
+    tokenPrice);
   });
 
   it("Should place a bid successfully", async function () {
