@@ -3,7 +3,7 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "./Errors.sol";
 
 /// @title TokenAuctionWithArray
 /// @notice A contract for conducting token auctions using an array for bid ordering
@@ -11,7 +11,6 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 contract TokenAuctionWithArray is ReentrancyGuard {
     uint256[] public orderedBids;
     using SafeERC20 for IERC20;
-    using SafeCast for uint256;
 
     // Structs
     struct Bid {
@@ -50,7 +49,7 @@ contract TokenAuctionWithArray is ReentrancyGuard {
 
     // Modifiers
     modifier onlyOwner() {
-        require(msg.sender == owner, "Not the owner");
+        require(msg.sender == owner, Errors.NOT_THE_OWNER);
         _;
     }
 
@@ -58,9 +57,9 @@ contract TokenAuctionWithArray is ReentrancyGuard {
         require(
             block.timestamp >= auctionStartTime &&
                 block.timestamp <= auctionEndTime,
-            "Auction not active"
+            Errors.AUCTION_NOT_ACTIVE
         );
-        require(!auctionEnded, "Auction already ended");
+        require(!auctionEnded, Errors.AUCTION_ALREADY_ENDED);
         _;
     }
 
@@ -81,19 +80,19 @@ contract TokenAuctionWithArray is ReentrancyGuard {
         uint256 _auctionEndTime,
         uint256 _auctionStartPrice
     ) external onlyOwner {
-        require(_tokenAddress != address(0), "Bad Address");
+        require(_tokenAddress != address(0), Errors.BAD_ADDRESS);
         require(
             _auctionStartTime > block.timestamp,
-            "Auction start time must be in the future"
+            Errors.AUCTION_START_MUST_BE_AHEAD
         );
         require(
             _auctionEndTime > _auctionStartTime,
-            "Auction end time must be after start time"
+            Errors.AUCTION_END_MUST_EXCEED_AUCTION_START_TIME
         );
         token = IERC20(_tokenAddress);
         require(
             token.balanceOf(msg.sender) >= _tokenQty,
-            "You don't have sufficient tokens"
+            Errors.INSUFFICIENT_TOKENS
         );
         tokenSupply = _tokenQty;
         auctionStartTime = _auctionStartTime;
@@ -101,9 +100,6 @@ contract TokenAuctionWithArray is ReentrancyGuard {
         auctionStartPrice = _auctionStartPrice;
 
         token.safeTransferFrom(msg.sender, address(this), _tokenQty);
-        
-
-        
     }
 
     /// @notice Allows a user to place a bid in the auction
@@ -116,19 +112,24 @@ contract TokenAuctionWithArray is ReentrancyGuard {
     ) external payable auctionActive nonReentrant {
         uint256 totalBidValue = _quantity * _bidPricePerUnit;
 
-        require(msg.value >= totalBidValue, "Insufficient ETH sent");
-        require(_bidPricePerUnit >= auctionStartPrice, "Bid price too low");
+        require(msg.value >= totalBidValue, Errors.INSUFFICIENT_PAYMENT);
+        require(
+            _bidPricePerUnit >= auctionStartPrice,
+            Errors.BID_PRICE_TOO_LOW
+        );
         require(
             token.balanceOf(address(this)) >= tokenSupply,
-            "Auctioner is yet to fund account correctly"
+            Errors.AUCTION_UNFUNDED
         );
 
         if (bidderCount != 0) {
             require(
-                _bidPricePerUnit > orderedBids[orderedBids.length - 1],
-                "Bid too low"
+                _bidPricePerUnit > orderedBids[orderedBids.length - 1], //to ensure that only a bid higher 
+                //than the last is added, effectively sorting the array in descending order
+                Errors.BID_PRICE_TOO_LOW
             );
         }
+        require(bidderCount <= 50, Errors.MAX_BID_COUNT_REACHED);
 
         bytes32 bidHash = _createBid(_quantity, _bidPricePerUnit);
 
@@ -141,8 +142,11 @@ contract TokenAuctionWithArray is ReentrancyGuard {
     /// @notice Ends the auction and processes winning bids
     /// @dev Can only be called by the owner after the auction end time
     function endAuction() external onlyOwner {
-        require(block.timestamp >= auctionEndTime, "Auction still ongoing");
-        require(!auctionEnded, "Auction already ended");
+        require(
+            block.timestamp >= auctionEndTime,
+            Errors.AUCTION_STILL_ONGOING
+        );
+        require(!auctionEnded, Errors.AUCTION_ALREADY_ENDED);
 
         auctionEnded = true;
         _fillWinningBids();
@@ -157,9 +161,9 @@ contract TokenAuctionWithArray is ReentrancyGuard {
         uint256 bidValue = bidHashToBidValue[_bidHash];
         Bid storage bid = bidDetails[bidValue];
 
-        require(bid.bidder == msg.sender, "Not the bidder");
-        require(bid.qtyFilled > 0, "No tokens to claim");
-        require(bid.isFilled, "Bid not fully processed");
+        require(bid.bidder == msg.sender, Errors.NOT_THE_BIDDER);
+        require(bid.qtyFilled > 0, Errors.NO_TOKENS_TO_CLAIM);
+        require(bid.isFilled, Errors.BID_NOT_PROCESSED);
 
         uint256 amountFilled = bid.qtyFilled;
         bid.qtyFilled = 0;
@@ -175,14 +179,14 @@ contract TokenAuctionWithArray is ReentrancyGuard {
         uint256 bidValue = bidHashToBidValue[_bidHash];
         Bid storage bid = bidDetails[bidValue];
 
-        require(bid.bidder == msg.sender, "Not the bidder");
-        require(bid.refundValue > 0, "No refund available");
+        require(bid.bidder == msg.sender, Errors.NOT_THE_BIDDER);
+        require(bid.refundValue > 0, Errors.NO_REFUND_AVAILABLE);
 
         uint256 refundAmount = bid.refundValue;
         bid.refundValue = 0;
 
         (bool success, ) = msg.sender.call{value: refundAmount}("");
-        require(success, "ETH refund failed");
+        require(success, Errors.ETH_REFUND_FAILED);
 
         emit RefundIssued(msg.sender, refundAmount);
     }
